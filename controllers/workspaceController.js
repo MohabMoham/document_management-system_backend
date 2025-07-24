@@ -2,7 +2,7 @@ const workspaceService = require('../services/workspace.service');
 
 exports.createWorkspace = async (req, res) => {
   try {
-    const workspace = await workspaceService.createWorkspace(req.user.userId, req.body);
+    const workspace = await workspaceService.createWorkspace(req.user.id, req.body);
     res.status(201).json(workspace);
   } catch (err) {
     res.status(500).json({ message: err.message || 'Error creating workspace.' });
@@ -11,16 +11,17 @@ exports.createWorkspace = async (req, res) => {
 
 exports.getWorkspacesByNID = async (req, res) => {
   try {
-    const workspaces = await workspaceService.getWorkspacesByNID(req.params.nid);
+    const workspaces = await workspaceService.getWorkspacesByNID(req.user.id,req.params.nid);
     res.json(workspaces);
   } catch (err) {
-    res.status(500).json({ message: err.message || 'Error fetching workspaces.' });
+    const status = err.message === 'Unauthorized' ? 403 : 500;
+    res.status(status).json({ message: err.message || 'Error fetching workspaces.' });
   }
 };
 
 exports.updateWorkspace = async (req, res) => {
   try {
-    const updated = await workspaceService.updateWorkspace(req.user.userId, req.params.id, req.body);
+    const updated = await workspaceService.updateWorkspace(req.user.id, req.params.id, req.body);
     res.json(updated);
   } catch (err) {
     const status = err.message === 'Unauthorized' ? 403 : 500;
@@ -30,7 +31,7 @@ exports.updateWorkspace = async (req, res) => {
 
 exports.deleteWorkspace = async (req, res) => {
   try {
-    const result = await workspaceService.deleteWorkspace(req.user.userId, req.params.id);
+    const result = await workspaceService.deleteWorkspace(req.user.id, req.params.id);
     res.json(result);
   } catch (err) {
     const status = err.message === 'Unauthorized' ? 403 : 500;

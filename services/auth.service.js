@@ -5,7 +5,16 @@ const jwt = require('jsonwebtoken');
 const prisma = new PrismaClient();
 const JWT_SECRET = process.env.JWT_SECRET;
 
-const registerUserService = async (data) => {
+
+async function getUserNID(userId) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { nationalId: true }
+  });
+  return user?.nationalId;
+}
+
+const registerUser = async (data) => {
   const { email, password, national_id, first_name, last_name, phone } = data;
 
   const hashedPassword = await bcrypt.hash(password, 10);
@@ -18,11 +27,12 @@ const registerUserService = async (data) => {
       firstName: first_name,
       lastName: last_name,
       phone,
+      role: 'user'
     },
   });
 
   const token = jwt.sign(
-    { userId: user.id, email: user.email },
+    { userId: user.id, email: user.email ,role: user.role,userNID: user.nationalId },
     JWT_SECRET,
     { expiresIn: '90d' }
   );
@@ -32,7 +42,7 @@ const registerUserService = async (data) => {
   return { token, user: userWithoutPassword };
 };
 
-const loginUserService = async (data) => {
+const loginUser = async (data) => {
   const { email, password } = data;
 
   const user = await prisma.user.findUnique({ where: { email } });
@@ -42,7 +52,7 @@ const loginUserService = async (data) => {
   if (!isPasswordValid) throw new Error('INVALID_CREDENTIALS');
 
   const token = jwt.sign(
-    { userId: user.id, email: user.email },
+    { userId: user.id, email: user.email , role: user.role},
     JWT_SECRET,
     { expiresIn: '90d' }
   );
@@ -53,6 +63,7 @@ const loginUserService = async (data) => {
 };
 
 module.exports = {
-  registerUserService,
-  loginUserService,
+  getUserNID,
+  registerUser,
+  loginUser
 };
