@@ -86,6 +86,7 @@ exports.uploadDocument = async (req, res) => {
 
     res.status(201).json(doc);
   } catch (error) {
+    console.error('Error uploading document:', error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -119,6 +120,7 @@ exports.downloadDocument = async (req, res) => {
     
     res.set('Content-Disposition', `attachment; filename="${filename}"`);
     file.pipe(res);
+    
   } catch (error) {
     res.status(404).json({ error: error.message });
   }
@@ -126,17 +128,19 @@ exports.downloadDocument = async (req, res) => {
 
 exports.previewDocument = async (req, res) => {
   try {
-    const userId = req.user.id;
-    const docId = req.params.id;
-
-    const base64Data = await documentService.getDocumentBase64(userId, docId);
-
-    res.status(200).json({ base64: base64Data });
+    const { id } = req.params;
+    const userId = req.user.id; 
+    
+    const dataUri = await documentService.getDocumentBase64(userId, id);
+    
+    
+    res.json({ dataUri: dataUri });
+    
   } catch (error) {
-    res.status(403).json({ error: error.message });
+    console.error('Preview error:', error);
+    res.status(500).json({ error: error.message });
   }
 };
-
 exports.getDocByWorkspace = async (req, res) => {
   try {
    
@@ -156,8 +160,65 @@ exports.searchDocuments = async (req, res) => {
     const filters = req.query;
     const results = await documentService.searchDocuments(req.user.id, filters);
     res.json(results);
-  } catch (err) {
+  } catch (error) {
+     console.error('SearchDocuments Controller Error:',error); 
     res.status(500).json({ error: 'Search failed' });
   }
 };
+
+exports.getDeletedDocuments = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { workspaceId } = req.query;
+    const deletedDocs = await documentService.getDeletedDocuments(userId, workspaceId);
+    res.json(deletedDocs);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.restoreDocument = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const docId = req.params.id;
+    const result = await documentService.restoreDocument(userId, docId);
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(403).json({ error: error.message });
+  }
+};
+
+exports.permanentlyDeleteDocument = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const docId = req.params.id;
+    const result = await documentService.permanentlyDeleteDocument(userId, docId);
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(403).json({ error: error.message });
+  }
+};
+
+exports.emptyRecycleBin = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { workspaceId } = req.query;
+    const result = await documentService.emptyRecycleBin(userId, workspaceId);
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.searchDeletedDocuments = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const filters = req.query;
+    const results = await documentService.searchDeletedDocuments(userId, filters);
+    res.status(200).json(results);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 

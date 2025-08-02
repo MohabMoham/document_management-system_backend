@@ -11,7 +11,7 @@ exports.createWorkspace = async (req, res) => {
 
 exports.getWorkspacesByNID = async (req, res) => {
   try {
-    const workspaces = await workspaceService.getWorkspacesByNID(req.user.id,req.params.nid);
+    const workspaces = await workspaceService.getWorkspacesByNID(req.user.id);
     res.json(workspaces);
   } catch (err) {
     const status = err.message === 'Unauthorized' ? 403 : 500;

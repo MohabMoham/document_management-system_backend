@@ -15,4 +15,7 @@ router.get('/documents/download/:id', authMiddleware,checkRole(['user']),control
 router.get('/documents/:id/preview', authMiddleware, checkRole(['user']),controller.previewDocument);
 router.get('/workspace/:workspaceId', authMiddleware,checkRole(['user']),controller.getDocByWorkspace);
 router.get('/documents/search', authMiddleware, controller.searchDocuments);
+router.get('/documents/deleted', authMiddleware, controller.getDeletedDocuments);
+router.patch('/documents/:id/restore', authMiddleware, controller.restoreDocument);
+router.delete('/documents/:id/permanent', authMiddleware, controller.permanentlyDeleteDocument);
 module.exports = router;

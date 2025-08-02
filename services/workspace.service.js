@@ -23,14 +23,14 @@ async function createWorkspace(userId, { title, type, structure }) {
   return workspace;
 }
 
-async function getWorkspacesByNID(userId, nid) {
+async function getWorkspacesByNID(userId) {
   const userNID = await getUserNID(userId);
   if (!userNID) throw new Error('User not found.');
   
   // Check if user is authorized to access this NID's data
-  if (userNID !== nid) throw new Error('Unauthorized');
+
   
-  return await Workspace.find({ userNID: nid });
+  return await Workspace.find({ userNID });
 }
 async function updateWorkspace(userId, id, updatedData) {
   const userNID = await getUserNID(userId);

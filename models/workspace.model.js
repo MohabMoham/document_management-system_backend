@@ -4,7 +4,7 @@ const mongoose = require('mongoose');
 const workspaceSchema = new mongoose.Schema({
   userNID: {
     type: String,
-  
+          
   },
   title: {
     type: String,

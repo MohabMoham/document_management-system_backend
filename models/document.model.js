@@ -6,18 +6,24 @@ const documentSchema = new mongoose.Schema({
     ref: 'Workspace',
     required: true
   },
+
+   folderId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'Folder' ,
+    required: true
+  },
   ownerNID: {
     type: String,
-    required: true
+  
   },
   name: {
     type: String,
-    required: true
+  
   },
   type: {
     type: String,
     enum: ['pdf', 'image', 'doc', 'other'],
-    required: true
+   
   },
   metadata: {
     version: { type: Number, default: 1 },
