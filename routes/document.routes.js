@@ -1,4 +1,3 @@
-
 const upload = require('../middlewares/gridFsStorage');
 const express = require('express');
 const router = express.Router();
@@ -13,9 +12,14 @@ router.delete('/documents/:id', authMiddleware,checkRole(['user']), controller.d
 router.post('/documents/upload', authMiddleware, upload.single("file"), controller.uploadDocument);
 router.get('/documents/download/:id', authMiddleware,checkRole(['user']),controller.downloadDocument);
 router.get('/documents/:id/preview', authMiddleware, checkRole(['user']),controller.previewDocument);
-router.get('/workspace/:workspaceId', authMiddleware,checkRole(['user']),controller.getDocByWorkspace);
+router.get('/documents/workspace/:workspaceId', authMiddleware,checkRole(['user']),controller.getDocByWorkspace);
 router.get('/documents/search', authMiddleware, controller.searchDocuments);
-router.get('/documents/deleted', authMiddleware, controller.getDeletedDocuments);
-router.patch('/documents/:id/restore', authMiddleware, controller.restoreDocument);
+router.get('/documents/deleted/list', authMiddleware, controller.getDeletedDocuments);
+router.put('/documents/:id/restore', authMiddleware, controller.restoreDocument);
 router.delete('/documents/:id/permanent', authMiddleware, controller.permanentlyDeleteDocument);
+router.put('/documents/:id/move', authMiddleware, controller.moveDocument);
+router.get('/documents/folder/:folderId', authMiddleware, controller.getDocumentsByFolder);
+router.get('/documents/search', authMiddleware, controller.searchDocuments);
+router.get('/documents/workspace/:workspaceId', authMiddleware, controller.getDocByWorkspace);
+router.get('/documents/workspace/:workspaceId/structure', authMiddleware, controller.getDocumentsWithStructure);
 module.exports = router;

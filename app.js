@@ -1,6 +1,6 @@
 const express = require('express');
 const cookieParser = require('cookie-parser');
-const csrf = require('csurf'); 
+const csrf = require('csurf');
 const cors = require('cors');
 const mongoose = require('mongoose');
 require('dotenv').config({ path: './.env' });
@@ -9,22 +9,36 @@ const app = express();
 
 
 app.use(cors({
-  origin: 'http://localhost:5173', // your frontend
+  origin: 'http://localhost:5173', // frontend origin
   methods: ['GET', 'POST', 'PATCH', 'DELETE', 'PUT'],
-  credentials: true 
+  credentials: true
 }));
 
 app.use(express.json());
-app.use(cookieParser()); 
+app.use(cookieParser());
 
 
 const csrfProtection = csrf({ cookie: true });
 
 
+app.get('/api/csrf-token', csrfProtection, (req, res) => {
+  res.cookie('XSRF-TOKEN', req.csrfToken()); 
+  res.json({ csrfToken: req.csrfToken() });
+});
+
+
+
+
+
 const userRoutes = require('./routes/userRoutes');
 const workspaceRoutes = require('./routes/workspaceRoutes');
 const documentRoutes = require('./routes/document.routes');
+const folderRoutes = require('./routes/folderRoutes');
 
+app.use('/api', userRoutes);
+app.use('/api', workspaceRoutes);
+app.use('/api', documentRoutes);
+app.use('/api/folders', folderRoutes);
 
 const DB = process.env.DATABASE.replace('<PASSWORD>', process.env.DATABASE_PASSWORD);
 const connectDB = async () => {
@@ -40,20 +54,6 @@ const connectDB = async () => {
   }
 };
 connectDB();
-
-
-app.use('/api', userRoutes);
-app.use('/api', workspaceRoutes);
-app.use('/api', documentRoutes);
-
-// ✅ CSRF token route
-app.get('/api/csrf-token', csrfProtection, (req, res) => {
-  res.cookie('XSRF-TOKEN', req.csrfToken()); // Set token in a readable cookie for frontend
-  res.json({ csrfToken: req.csrfToken() });
-});
-
-
-app.use(csrfProtection);
 
 
 const PORT = 3000;

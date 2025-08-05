@@ -1,20 +1,27 @@
 const mime = require('mime-types');
 const path = require('path');
 const Document = require('../models/document.model');
+const Folder = require('../models/folder.model');
 const { PrismaClient } = require('../generated/prisma');
 const prisma = new PrismaClient();
 const { getGridFSBucket } = require('../utils/gridFs');
 const mongoose = require('mongoose');
-const { getUserNID } = require('./auth.service'); // Importing the auth service to get user NID
+const { getUserNID } = require('./auth.service');
 
-
-
-async function createDocument(userId, { workspaceId, name, type, content }) {
+async function createDocument(userId, { workspaceId, folderId, name, type, content }) {
   const userNID = await getUserNID(userId);
   if (!userNID) throw new Error('User not found.');
+
+  const folder = await Folder.findById(folderId);
+  if (!folder) throw new Error('Folder not found.');
+  if (folder.ownerNID !== userNID) throw new Error('Unauthorized to create document in this folder.');
+  if (folder.workspaceId.toString() !== workspaceId) {
+    throw new Error('Folder does not belong to the specified workspace.');
+  }
    
   const document = await Document.create({
     workspaceId,
+    folderId,
     ownerNID: userNID,
     name,
     type,
@@ -24,15 +31,9 @@ async function createDocument(userId, { workspaceId, name, type, content }) {
   return document;
 }
 
-
-
 async function getDocument(docId) {
-
   return await Document.findById(docId);
-
 }
-
-
 
 async function getDocumentsByUserId(userId) {
   const userNID = await getUserNID(userId);
@@ -42,8 +43,21 @@ async function getDocumentsByUserId(userId) {
 }
 
 
+async function getDocumentsByFolder(userId, folderId) {
+  const userNID = await getUserNID(userId);
+  if (!userNID) throw new Error('User not found.');
 
+ 
+  const folder = await Folder.findById(folderId);
+  if (!folder) throw new Error('Folder not found.');
+  if (folder.ownerNID !== userNID) throw new Error('Unauthorized.');
 
+  return await Document.find({ 
+    folderId, 
+    ownerNID: userNID, 
+    deleted: false 
+  }).sort({ updatedAt: -1 });
+}
 
 async function updateDocument(userId, docId, updatedData) {
   const userNID = await getUserNID(userId);
@@ -51,6 +65,16 @@ async function updateDocument(userId, docId, updatedData) {
 
   if (!document) throw new Error('Document not found.');
   if (document.ownerNID !== userNID) throw new Error('Unauthorized');
+
+  
+  if (updatedData.folderId && updatedData.folderId !== document.folderId.toString()) {
+    const newFolder = await Folder.findById(updatedData.folderId);
+    if (!newFolder) throw new Error('Target folder not found.');
+    if (newFolder.ownerNID !== userNID) throw new Error('Unauthorized to move document to this folder.');
+    if (newFolder.workspaceId.toString() !== document.workspaceId.toString()) {
+      throw new Error('Cannot move document to folder in different workspace.');
+    }
+  }
   
   return await Document.findByIdAndUpdate(
     docId,
@@ -60,7 +84,30 @@ async function updateDocument(userId, docId, updatedData) {
 }
 
 
-// Soft delete - moves document to recycle bin
+async function moveDocument(userId, docId, targetFolderId) {
+  const userNID = await getUserNID(userId);
+  const document = await Document.findById(docId);
+
+  if (!document) throw new Error('Document not found.');
+  if (document.ownerNID !== userNID) throw new Error('Unauthorized.');
+
+  const targetFolder = await Folder.findById(targetFolderId);
+  if (!targetFolder) throw new Error('Target folder not found.');
+  if (targetFolder.ownerNID !== userNID) throw new Error('Unauthorized to move document to this folder.');
+  
+ 
+  if (targetFolder.workspaceId.toString() !== document.workspaceId.toString()) {
+    throw new Error('Cannot move document to folder in different workspace.');
+  }
+
+  document.folderId = targetFolderId;
+  document.updatedAt = new Date();
+  await document.save();
+
+  return { message: 'Document moved successfully.', document };
+}
+
+
 async function deleteDocument(userId, docId) {
   const userNID = await getUserNID(userId);
   const document = await Document.findById(docId);
@@ -69,13 +116,14 @@ async function deleteDocument(userId, docId) {
   if (document.ownerNID !== userNID) throw new Error('Unauthorized');
 
   document.deleted = true;
+  document.deletedAt = new Date();
   await document.save();
 
   return { message: 'Document moved to recycle bin successfully.' };
 }
 
-// NEW: Get deleted documents (recycle bin)
-async function getDeletedDocuments(userId, workspaceId = null) {
+
+async function getDeletedDocuments(userId, workspaceId = null, folderId = null) {
   const userNID = await getUserNID(userId);
   if (!userNID) throw new Error('User not found.');
 
@@ -84,14 +132,16 @@ async function getDeletedDocuments(userId, workspaceId = null) {
     deleted: true 
   };
 
-  // If workspaceId is provided, filter by workspace
   if (workspaceId) {
     query.workspaceId = workspaceId;
   }
 
+  if (folderId) {
+    query.folderId = folderId;
+  }
+
   return await Document.find(query).sort({ deletedAt: -1 });
 }
-
 
 async function restoreDocument(userId, docId) {
   const userNID = await getUserNID(userId);
@@ -101,7 +151,8 @@ async function restoreDocument(userId, docId) {
   if (document.ownerNID !== userNID) throw new Error('Unauthorized');
   if (!document.deleted) throw new Error('Document is not in recycle bin.');
 
-  
+
+
   document.deleted = false;
   document.deletedAt = null;
   document.updatedAt = new Date(); 
@@ -109,7 +160,6 @@ async function restoreDocument(userId, docId) {
 
   return { message: 'Document restored successfully.', document };
 }
-
 
 async function permanentlyDeleteDocument(userId, docId) {
   const userNID = await getUserNID(userId);
@@ -128,7 +178,6 @@ async function permanentlyDeleteDocument(userId, docId) {
       console.log(`File ${fileId} deleted from GridFS`);
     } catch (err) {
       console.error('Error deleting file from GridFS:', err);
-      
     }
   }
 
@@ -137,8 +186,7 @@ async function permanentlyDeleteDocument(userId, docId) {
   return { message: 'Document permanently deleted.' };
 }
 
-
-async function emptyRecycleBin(userId, workspaceId = null) {
+async function emptyRecycleBin(userId, workspaceId = null, folderId = null) {
   const userNID = await getUserNID(userId);
   if (!userNID) throw new Error('User not found.');
 
@@ -151,9 +199,13 @@ async function emptyRecycleBin(userId, workspaceId = null) {
     query.workspaceId = workspaceId;
   }
 
+  if (folderId) {
+    query.folderId = folderId;
+  }
+
   const deletedDocuments = await Document.find(query);
   
-  
+
   const bucket = getGridFSBucket();
   const deletePromises = deletedDocuments.map(async (doc) => {
     if (doc.filePath) {
@@ -167,7 +219,6 @@ async function emptyRecycleBin(userId, workspaceId = null) {
   });
 
   await Promise.all(deletePromises);
-
   
   const result = await Document.deleteMany(query);
 
@@ -177,20 +228,18 @@ async function emptyRecycleBin(userId, workspaceId = null) {
   };
 }
 
-
-
-
-async function saveUploadedDocument({ workspaceId, ownerNID, type, name, fileId }) {
+async function saveUploadedDocument({ workspaceId, folderId, ownerNID, type, name, fileId, metadata }) {
   const document = await Document.create({
     workspaceId,
+    folderId,
     ownerNID,
     name,
     type,
-    filePath: fileId.toString(), 
+    filePath: fileId.toString(),
+    metadata: metadata || {}
   });
   return document;
 }
-
 
 async function getDocumentStream(docId) {
   const document = await Document.findById(docId);
@@ -199,13 +248,23 @@ async function getDocumentStream(docId) {
   const bucket = getGridFSBucket();
   const fileId = new mongoose.Types.ObjectId(document.filePath);
   const file = bucket.openDownloadStream(fileId);
-  console.log(file)
 
   return { file, filename: document.name };
 }
 
+async function handleUploadAndSave({ file, workspaceId, folderId, ownerNID, type, name }) {
+  // ✅ Only validate folder if folderId is provided
+  if (folderId) {
+    const folder = await Folder.findById(folderId);
+    if (!folder) throw new Error('Folder not found.');
+    if (folder.workspaceId.toString() !== workspaceId) {
+      throw new Error('Folder does not belong to the specified workspace.');
+    }
 
-async function handleUploadAndSave({ file, workspaceId, ownerNID, type, name }) {
+
+  }
+  
+
   return new Promise((resolve, reject) => {
     const bucket = getGridFSBucket();
     const fileName = `${Date.now()}-${file.originalname}`;
@@ -213,12 +272,16 @@ async function handleUploadAndSave({ file, workspaceId, ownerNID, type, name }) 
     const uploadStream = bucket.openUploadStream(fileName, {
       metadata: {
         workspaceId,
+        folderId: folderId || null, // ✅ Null if no folder
         ownerNID,
-        type
+        type,
+        originalName: file.originalname,
+        size: file.size,
+        mimeType: file.mimetype
       }
     });
 
-    uploadStream.end(file.buffer); 
+    uploadStream.end(file.buffer);
 
     uploadStream.on('error', (err) => {
       reject(new Error('Error uploading file to GridFS: ' + err.message));
@@ -228,10 +291,15 @@ async function handleUploadAndSave({ file, workspaceId, ownerNID, type, name }) 
       try {
         const savedDoc = await saveUploadedDocument({
           workspaceId,
+          folderId: folderId || null, 
           ownerNID,
           type,
           name: name || file.originalname,
-          fileId: uploadStream.id
+          fileId: uploadStream.id,
+          metadata: {
+            size: file.size,
+            mimeType: file.mimetype
+          }
         });
         resolve(savedDoc);
       } catch (err) {
@@ -261,39 +329,32 @@ async function getDocumentBase64(userId, docId) {
     downloadStream.on('end', () => {
       const buffer = Buffer.concat(chunks);
       const base64String = buffer.toString('base64');
-
-      // ➕ Infer MIME type from original filename (document.originalName)
-     
-     const mimeType = mime.lookup(document.name) || 'application/octet-stream';
-    
-
+      const mimeType = mime.lookup(document.name) || 'application/octet-stream';
       const fullDataURI = `data:${mimeType};base64,${base64String}`;
-
       resolve(fullDataURI);
     });
   });
 }
 
 async function getDocumentsByWorkspace(workspaceId, filters = {}) {
- 
   const query = { workspaceId, deleted: false };
 
   if (filters.type) query.type = filters.type;
   if (filters.name) query.name = { $regex: filters.name, $options: 'i' };
+  if (filters.folderId) query.folderId = filters.folderId;
 
   return await Document.find(query).sort({ updatedAt: -1 });
 }
-
 
 async function getDeletedDocumentsByWorkspace(workspaceId, filters = {}) {
   const query = { workspaceId, deleted: true };
 
   if (filters.type) query.type = filters.type;
   if (filters.name) query.name = { $regex: filters.name, $options: 'i' };
+  if (filters.folderId) query.folderId = filters.folderId;
 
   return await Document.find(query).sort({ deletedAt: -1 });
 }
-
 
 async function searchDocuments(userId, filters = {}) {
   const query = { deleted: false };
@@ -301,29 +362,62 @@ async function searchDocuments(userId, filters = {}) {
   const userNID = await getUserNID(userId);
   if (!userNID) throw new Error('User not found.');
   
+  query.ownerNID = userNID;
+
   if (filters.name) {
     query.name = { $regex: filters.name, $options: 'i' };
   }
 
- 
   if (filters.type) {
     query.type = filters.type;
   }
-
 
   if (filters.workspaceId) {
     query.workspaceId = filters.workspaceId;
   }
 
-  return await Document.find(query).sort({ updatedAt: -1 });
+  if (filters.folderId) {
+    query.folderId = filters.folderId;
+  }
+  if (filters.date) {
+  const now = new Date();
+  let startDate;
+
+  switch (filters.date) {
+    case 'today':
+      startDate = new Date(now.toDateString());
+      break;
+    case 'week':
+      startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      break;
+    case 'month':
+      startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      break;
+    case 'year':
+      startDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+      break;
+  }
+
+  if (startDate) query.updatedAt = { $gte: startDate };
+}
+if (filters.sortBy === 'size') {
+  documents = await Document.find(query).sort({ 'metadata.size': filters.order === 'asc' ? 1 : -1 });
 }
 
+
+  const documents = await Document.find(query).sort({ updatedAt: -1 });
+  
+
+  return documents;
+}
 
 async function searchDeletedDocuments(userId, filters = {}) {
   const query = { deleted: true };
 
   const userNID = await getUserNID(userId);
   if (!userNID) throw new Error('User not found.');
+  
+  query.ownerNID = userNID;
   
   if (filters.name) {
     query.name = { $regex: filters.name, $options: 'i' };
@@ -337,14 +431,78 @@ async function searchDeletedDocuments(userId, filters = {}) {
     query.workspaceId = filters.workspaceId;
   }
 
+  if (filters.folderId) {
+    query.folderId = filters.folderId;
+  }
+
   return await Document.find(query).sort({ deletedAt: -1 });
+}
+
+
+async function getDocumentsWithFolderStructure(userId, workspaceId) {
+  const userNID = await getUserNID(userId);
+  if (!userNID) throw new Error('User not found.');
+
+ 
+  const folders = await Folder.find({ 
+    workspaceId, 
+    ownerNID: userNID, 
+    deleted: false 
+  }).sort({ path: 1 });
+
+
+  const documents = await Document.find({ 
+    workspaceId, 
+    ownerNID: userNID, 
+    deleted: false 
+  }).sort({ name: 1 });
+
+ 
+  const structure = {};
+  
+  folders.forEach(folder => {
+    structure[folder._id] = {
+      folder: folder,
+      documents: [],
+      subfolders: []
+    };
+  });
+
+
+  documents.forEach(doc => {
+    if (structure[doc.folderId]) {
+      structure[doc.folderId].documents.push(doc);
+    }
+  });
+
+
+  const rootFolders = folders.filter(f => !f.parentFolderId);
+  
+  function buildHierarchy(folderId) {
+    const folderData = structure[folderId];
+    if (!folderData) return null;
+
+    const subfolders = folders
+      .filter(f => f.parentFolderId && f.parentFolderId.toString() === folderId.toString())
+      .map(f => buildHierarchy(f._id))
+      .filter(Boolean);
+
+    return {
+      ...folderData,
+      subfolders
+    };
+  }
+
+  return rootFolders.map(f => buildHierarchy(f._id)).filter(Boolean);
 }
 
 module.exports = {
   createDocument,
   getDocument,
   getDocumentsByUserId,
+  getDocumentsByFolder,
   updateDocument,
+  moveDocument,
   deleteDocument,
   saveUploadedDocument,
   getDocumentStream,
@@ -357,5 +515,6 @@ module.exports = {
   permanentlyDeleteDocument,
   emptyRecycleBin,
   getDeletedDocumentsByWorkspace,
-  searchDeletedDocuments
+  searchDeletedDocuments,
+  getDocumentsWithFolderStructure
 };
