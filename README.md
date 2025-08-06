@@ -42,5 +42,18 @@ These are installed via `npm install`:
 "gridfs-stream": "^1.1.1",
 "jsonwebtoken": "^9.0.2",
 "mime-types": "^3.0.1",
+
+# MongoDB connection string (used for folders, documents, and files)
+MONGO_URI=mongodb://localhost:27017/your-mongo-db
+
+# PostgreSQL connection string (used for user authentication and other relational data)
+DATABASE_URL=postgresql://user:password@localhost:5432/your-postgres-db
+
+# Secret for signing JWT tokens
+JWT_SECRET=your_jwt_secret
+
+
+
+
 "mongoose": "^8.16.2",
 "multer": "^2.0.1"
