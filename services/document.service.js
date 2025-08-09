@@ -241,38 +241,22 @@ async function saveUploadedDocument({ workspaceId, folderId, ownerNID, type, nam
   return document;
 }
 
-async function getDocumentStream(docId) {
-  const document = await Document.findById(docId);
-  if (!document || !document.filePath) throw new Error('Document or file not found');
-
-  const bucket = getGridFSBucket();
-  const fileId = new mongoose.Types.ObjectId(document.filePath);
-  const file = bucket.openDownloadStream(fileId);
-
-  return { file, filename: document.name };
-}
-
-async function handleUploadAndSave({ file, workspaceId, folderId, ownerNID, type, name }) {
-  // ✅ Only validate folder if folderId is provided
+async function handleUploadAndSave({ file, workspaceId, folderId, ownerNID, type, name,userId }) {
   if (folderId) {
     const folder = await Folder.findById(folderId);
     if (!folder) throw new Error('Folder not found.');
     if (folder.workspaceId.toString() !== workspaceId) {
       throw new Error('Folder does not belong to the specified workspace.');
     }
-
-
   }
-  
 
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     const bucket = getGridFSBucket();
     const fileName = `${Date.now()}-${file.originalname}`;
-
     const uploadStream = bucket.openUploadStream(fileName, {
       metadata: {
         workspaceId,
-        folderId: folderId || null, // ✅ Null if no folder
+        folderId: folderId || null,
         ownerNID,
         type,
         originalName: file.originalname,
@@ -289,25 +273,70 @@ async function handleUploadAndSave({ file, workspaceId, folderId, ownerNID, type
 
     uploadStream.on('finish', async () => {
       try {
-        const savedDoc = await saveUploadedDocument({
+        const existingDoc = await Document.findOne({
           workspaceId,
-          folderId: folderId || null, 
-          ownerNID,
-          type,
+          folderId: folderId || null,
           name: name || file.originalname,
-          fileId: uploadStream.id,
-          metadata: {
-            size: file.size,
-            mimeType: file.mimetype
-          }
+          deleted: false
         });
-        resolve(savedDoc);
+
+        if (existingDoc) {
+          
+          existingDoc.versions.push({
+            version: existingDoc.metadata.version,
+            uploadedAt: new Date(),
+           uploadedBy: new mongoose.Types.ObjectId(userId),
+            filePath: existingDoc.filePath,
+            metadata: {
+              size: existingDoc.metadata.size,
+              mimeType: existingDoc.metadata.mimeType
+            }
+          });
+
+          // Update with new version
+          existingDoc.filePath = uploadStream.id;
+          existingDoc.metadata.size = file.size;
+          existingDoc.metadata.mimeType = file.mimetype;
+          existingDoc.metadata.version += 1;
+
+          await existingDoc.save();
+          resolve(existingDoc);
+        } else {
+          // Create new document
+          const newDoc = await saveUploadedDocument({
+            workspaceId,
+            folderId: folderId || null,
+            ownerNID,
+            type,
+            name: name || file.originalname,
+            fileId: uploadStream.id,
+            metadata: {
+              size: file.size,
+              mimeType: file.mimetype
+            }
+          });
+          resolve(newDoc);
+        }
       } catch (err) {
         reject(err);
       }
     });
   });
 }
+
+async function getDocumentStream(docId) {
+  const document = await Document.findById(docId);
+  if (!document || !document.filePath) throw new Error('Document or file not found');
+
+  const bucket = getGridFSBucket();
+  const fileId = new mongoose.Types.ObjectId(document.filePath);
+  const file = bucket.openDownloadStream(fileId);
+
+  return { file, filename: document.name };
+}
+
+
+
 
 
 async function getDocumentBase64(userId, docId) {
@@ -496,6 +525,75 @@ async function getDocumentsWithFolderStructure(userId, workspaceId) {
   return rootFolders.map(f => buildHierarchy(f._id)).filter(Boolean);
 }
 
+async function getDocumentVersions(documentId) {
+  if (!mongoose.Types.ObjectId.isValid(documentId)) throw new Error('Invalid document ID');
+
+  const doc = await Document.findById(documentId).select('versions');
+  if (!doc) throw new Error('Document not found');
+
+  return doc.versions.sort((a, b) => b.uploadedAt - a.uploadedAt);
+}
+
+async function restoreDocumentVersion(userId, documentId, versionId) {
+  if (!mongoose.Types.ObjectId.isValid(documentId)) throw new Error('Invalid document ID');
+  if (!mongoose.Types.ObjectId.isValid(versionId)) throw new Error('Invalid version ID');
+
+  console.log('Received versionId:', versionId, 'Type:', typeof versionId);
+  
+  const document = await Document.findById(documentId);
+  if (!document) throw new Error('Document not found');
+
+  const userNID = await getUserNID(userId);
+  if (document.ownerNID !== userNID) throw new Error('Unauthorized');
+
+  const version = document.versions.id(versionId); 
+  if (!version) throw new Error('Version not found');
+
+  // Save current as new version
+  document.versions.push({
+    version: document.metadata.version,
+    uploadedAt: new Date(),
+    uploadedBy: userId,
+    filePath: document.filePath,
+    metadata: {
+      size: document.metadata.size,
+      mimeType: document.metadata.mimeType,
+      changeNote: "Auto-saved before restore"
+    }
+  });
+
+  // Restore version
+  document.filePath = version.filePath;
+  document.metadata.size = version.metadata.size;
+  document.metadata.mimeType = version.metadata.mimeType;
+  document.metadata.version += 1;
+  document.updatedAt = new Date();
+
+  await document.save();
+  return document;
+}
+
+
+
+async function deleteDocumentVersion(userId, documentId, versionIndex) {
+  if (!mongoose.Types.ObjectId.isValid(documentId)) throw new Error('Invalid document ID');
+
+  const document = await Document.findById(documentId);
+  if (!document) throw new Error('Document not found');
+
+  const userNID = await getUserNID(userId);
+  if (document.ownerNID !== userNID) throw new Error('Unauthorized');
+
+  if (versionIndex < 0 || versionIndex >= document.versions.length) {
+    throw new Error('Invalid version index');
+  }
+
+  document.versions.splice(versionIndex, 1);
+  await document.save();
+  return { success: true, message: 'Version deleted successfully.' };
+}
+
+
 module.exports = {
   createDocument,
   getDocument,
@@ -516,5 +614,8 @@ module.exports = {
   emptyRecycleBin,
   getDeletedDocumentsByWorkspace,
   searchDeletedDocuments,
-  getDocumentsWithFolderStructure
+  getDocumentsWithFolderStructure,
+  getDocumentVersions,
+  restoreDocumentVersion,
+  deleteDocumentVersion
 };

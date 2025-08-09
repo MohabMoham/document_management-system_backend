@@ -35,6 +35,19 @@ const documentSchema = new mongoose.Schema({
     size: { type: Number }, // File size in bytes
     mimeType: { type: String }
   },
+versions: [{
+  version: Number,
+  uploadedAt: Date,
+  uploadedBy: { type: String }, 
+  filePath: String,
+  metadata: {
+    size: Number,
+    mimeType: String,
+    changeNote: String
+  }
+}],
+
+
   content: {
     type: Object, 
     default: {}

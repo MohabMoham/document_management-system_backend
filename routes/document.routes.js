@@ -19,7 +19,11 @@ router.put('/documents/:id/restore', authMiddleware, controller.restoreDocument)
 router.delete('/documents/:id/permanent', authMiddleware, controller.permanentlyDeleteDocument);
 router.put('/documents/:id/move', authMiddleware, controller.moveDocument);
 router.get('/documents/folder/:folderId', authMiddleware, controller.getDocumentsByFolder);
-router.get('/documents/search', authMiddleware, controller.searchDocuments);
+router.get('/documents/search-deleted', authMiddleware, controller.searchDeletedDocuments);
 router.get('/documents/workspace/:workspaceId', authMiddleware, controller.getDocByWorkspace);
 router.get('/documents/workspace/:workspaceId/structure', authMiddleware, controller.getDocumentsWithStructure);
+
+router.get('/documents/:docId/versions',authMiddleware ,controller.getDocumentVersions);
+router.post('/documents/:documentId/versions/:versionId/restore',authMiddleware ,controller.restoreDocumentVersion);
+router.delete('/documents/versions/:versionId',authMiddleware ,controller.deleteDocumentVersion); 
 module.exports = router;

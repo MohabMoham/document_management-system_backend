@@ -272,3 +272,45 @@ exports.searchDeletedDocuments = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+exports.getDocumentVersions = async (req, res) => {
+  try {
+    const { docId } = req.params;
+    const versions = await documentService.getDocumentVersions(docId);
+    res.status(200).json({
+      count: versions.length,
+      results: versions
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.restoreDocumentVersion = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { documentId, versionId } = req.params; // ✅ Extract both parameters
+
+    console.log('Controller params:', { documentId, versionId }); // Debug log
+
+    const restored = await documentService.restoreDocumentVersion(userId, documentId, versionId); // ✅ Pass both parameters
+    
+    res.status(200).json({
+      message: 'Document restored to selected version',
+      result: restored
+    });
+  } catch (error) {
+    console.error('Restore error:', error.message); // Add error logging
+    res.status(400).json({ error: error.message });
+  }
+};
+
+exports.deleteDocumentVersion = async (req, res) => {
+  try {
+    const { versionId } = req.params;
+    await documentService.deleteDocumentVersion(versionId);
+    res.status(200).json({ message: 'Version deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
